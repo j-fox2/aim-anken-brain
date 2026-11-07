@@ -32,9 +32,19 @@ NEG = re.compile(r"初心者|未経験|デビュー|主婦|スキマ|学生|キ�
 
 
 def fetch(url):
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "ja"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return r.read().decode("utf-8", "replace")
+    # 一時的に弾かれることがあるので、間隔をあけて最大3回やり直す
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "ja,en;q=0.8",
+                                               "Accept": "text/html,application/xhtml+xml"})
+    last = None
+    for wait in (0, 5, 15):
+        time.sleep(wait)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return r.read().decode("utf-8", "replace")
+        except Exception as e:  # HTTPエラーの番号もログに残す
+            last = e
+            print("fetch retry", url[:80], repr(e))
+    raise last
 
 
 def yen(n):
@@ -82,6 +92,7 @@ def crowdworks():
                 continue
             m = re.search(r'<div id="vue-container" data="([^"]*)"', src)
             if not m:
+                print("CW: 案件データが見つからない", kw, page, len(src), src[:200].replace("\n", " "))
                 continue
             data = json.loads(html.unescape(m.group(1)))
             for x in data.get("searchResult", {}).get("job_offers", []):
@@ -235,6 +246,8 @@ def main():
         return out
 
     status = {}
+    if not keep:  # 手動案件がすべて期限切れ → 画面に出して気づけるようにする
+        status["手動案件（Indeedなど）"] = "確認から3週間たち、すべて期限切れです。curated.json の更新が必要です"
     cw, cw_total = crowdworks()
     if cw_total == 0:
         cw = carry_over("クラウドワークス")
